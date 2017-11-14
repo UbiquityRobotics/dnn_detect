@@ -74,6 +74,7 @@ class DnnNode {
     image_transport::Publisher image_pub;
 
     cv::dnn::Net net;
+    cv::Mat resized_image;
 
     void imageCallback(const sensor_msgs::ImageConstPtr &msg);
 
@@ -94,8 +95,6 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
         int w = cv_ptr->image.cols;
         int h = cv_ptr->image.rows;
 
-        cv::Mat resized_image;
-                imwrite("cat2.jpg", cv_ptr->image);
         cv::resize(cv_ptr->image, resized_image, cvSize(300, 300));
         cv::Mat blob = cv::dnn::blobFromImage(resized_image, 0.007843, cvSize(300, 300), 127.5, false);
 
