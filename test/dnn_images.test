@@ -1,6 +1,7 @@
 <launch>
   <node pkg="dnn_detect" name="dnn_detect" type="dnn_detect">
     <param name="image_transport" value="raw" />
+    <param name="data_dir" value="$(find dnn_detect)/model"/>
     <remap from="/camera/" to="/camera/image/"/>
   </node>
 
