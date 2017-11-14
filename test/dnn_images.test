@@ -1,0 +1,12 @@
+<launch>
+  <node pkg="dnn_detect" name="dnn_detect" type="dnn_detect">
+    <param name="image_transport" value="raw" />
+    <remap from="/camera/" to="/camera/image/"/>
+  </node>
+
+  <test test-name="dnn_images_test" pkg="dnn_detect" type="dnn_images_test">
+    <param name="image_directory" value="$(find dnn_detect)/test/test_images/"/>
+  </test>
+
+</launch>
+
