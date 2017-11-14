@@ -60,6 +60,10 @@ install(DIRECTORY launch/
         DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
 ) 
 
+install(DIRECTORY model/
+        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/model
+) 
+
 ###########
 ## Tests ##
 ###########
