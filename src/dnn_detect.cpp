@@ -49,14 +49,15 @@
 using namespace std;
 using namespace cv;
 
-const float inScaleFactor = 0.007843f;
-const float meanVal = 127.5;
-const char* classNames[] = {"background",
-                            "aeroplane", "bicycle", "bird", "boat",
-                            "bottle", "bus", "car", "cat", "chair",
-                            "cow", "diningtable", "dog", "horse",
-                            "motorbike", "person", "pottedplant",
-                            "sheep", "sofa", "train", "tvmonitor"};
+const int im_size = 300;
+const float scale_factor = 0.007843f;
+const float mean_val = 127.5;
+const char* class_names[] = {"background",
+                             "aeroplane", "bicycle", "bird", "boat",
+                             "bottle", "bus", "car", "cat", "chair",
+                             "cow", "diningtable", "dog", "horse",
+                             "motorbike", "person", "pottedplant",
+                             "sheep", "sofa", "train", "tvmonitor"};
 
 class DnnNode {
   private:
@@ -95,8 +96,9 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
         int w = cv_ptr->image.cols;
         int h = cv_ptr->image.rows;
 
-        cv::resize(cv_ptr->image, resized_image, cvSize(300, 300));
-        cv::Mat blob = cv::dnn::blobFromImage(resized_image, 0.007843, cvSize(300, 300), 127.5, false);
+        cv::resize(cv_ptr->image, resized_image, cvSize(im_size, im_size));
+        cv::Mat blob = cv::dnn::blobFromImage(resized_image, scale_factor,
+          cvSize(im_size, im_size), mean_val, false);
 
         net.setInput(blob, "data");
         cv::Mat objs = net.forward("detection_out");
@@ -115,12 +117,12 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
                 int y_max = static_cast<int>(detectionMat.at<float>(i, 6) * h);
 
                 std::string label = str(boost::format{"%1% %2%"} % 
-                                        classNames[objectClass] % confidence);
+                                        class_names[objectClass] % confidence);
 
                 ROS_INFO("%s", label.c_str());
                 dnn_detect::DetectedObject obj;
                 obj.header.frame_id = msg->header.frame_id;
-                obj.class_name = classNames[objectClass];
+                obj.class_name = class_names[objectClass];
                 obj.confidence = confidence;
                 obj.x_min = x_min;
                 obj.x_max = x_max;
