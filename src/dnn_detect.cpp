@@ -117,6 +117,7 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
                 std::string label = str(boost::format{"%1% %2%"} % 
                                         classNames[objectClass] % confidence);
 
+                ROS_INFO("%s", label.c_str());
                 dnn_detect::DetectedObject obj;
                 obj.header.frame_id = msg->header.frame_id;
                 obj.class_name = classNames[objectClass];
