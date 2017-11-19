@@ -45,19 +45,10 @@
 
 #include <list>
 #include <string>
+#include <boost/algorithm/string.hpp>
 
 using namespace std;
 using namespace cv;
-
-const int im_size = 300;
-const float scale_factor = 0.007843f;
-const float mean_val = 127.5;
-const char* class_names[] = {"background",
-                             "aeroplane", "bicycle", "bird", "boat",
-                             "bottle", "bus", "car", "cat", "chair",
-                             "cow", "diningtable", "dog", "horse",
-                             "motorbike", "person", "pottedplant",
-                             "sheep", "sofa", "train", "tvmonitor"};
 
 class DnnNode {
   private:
@@ -69,8 +60,12 @@ class DnnNode {
     // if set, we publish the images that contain objects
     bool publish_images;
 
-    int frameNum;
+    int frame_num;
     float min_confidence;
+    int im_size;
+    float scale_factor;
+    float mean_val;
+    std::vector<std::string> class_names;
 
     image_transport::Publisher image_pub;
 
@@ -86,7 +81,7 @@ class DnnNode {
 
 void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
     ROS_INFO("Got image %d", msg->header.seq);
-    frameNum++;
+    frame_num++;
 
     cv_bridge::CvImagePtr cv_ptr;
 
@@ -103,26 +98,36 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
         net.setInput(blob, "data");
         cv::Mat objs = net.forward("detection_out");
 
-        cv::Mat detectionMat(objs.size[2], objs.size[3], CV_32F, objs.ptr<float>());
+        cv::Mat detectionMat(objs.size[2], objs.size[3], CV_32F,
+                             objs.ptr<float>());
 
         for(int i = 0; i < detectionMat.rows; i++) {
- 
+
             float confidence = detectionMat.at<float>(i, 2);
             if (confidence > min_confidence) {
-                size_t objectClass = (size_t)(detectionMat.at<float>(i, 1));
+                int object_class = (int)(detectionMat.at<float>(i, 1));
 
                 int x_min = static_cast<int>(detectionMat.at<float>(i, 3) * w);
                 int y_min = static_cast<int>(detectionMat.at<float>(i, 4) * h);
                 int x_max = static_cast<int>(detectionMat.at<float>(i, 5) * w);
                 int y_max = static_cast<int>(detectionMat.at<float>(i, 6) * h);
 
-                std::string label = str(boost::format{"%1% %2%"} % 
-                                        class_names[objectClass] % confidence);
+                std::string class_name;
+                if (object_class >= class_names.size()) {
+                     class_name = "unknown";
+                     ROS_ERROR("Object class %d out of range of class names",
+                               object_class);
+                }
+                else {
+                     class_name = class_names[object_class];
+                }
+                std::string label = str(boost::format{"%1% %2%"} %
+                                        class_name % confidence);
 
                 ROS_INFO("%s", label.c_str());
                 dnn_detect::DetectedObject obj;
                 obj.header.frame_id = msg->header.frame_id;
-                obj.class_name = class_names[objectClass];
+                obj.class_name = class_name;
                 obj.confidence = confidence;
                 obj.x_min = x_min;
                 obj.x_max = x_max;
@@ -134,11 +139,10 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
 
                 rectangle(cv_ptr->image, object, Scalar(0, 255, 0));
                 int baseline=0;
-                cv::Size text_size = cv::getTextSize(label, 
+                cv::Size text_size = cv::getTextSize(label,
                                      FONT_HERSHEY_SIMPLEX, 0.75, 2, &baseline);
                 putText(cv_ptr->image, label, Point(x_min, y_min-text_size.height),
                         FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0, 255, 0));
-                
             }
         }
 
@@ -154,29 +158,42 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
 
 DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
 {
-    frameNum = 0;
+    frame_num = 0;
 
     std::string dir;
     std::string proto_net_file;
     std::string caffe_model_file;
+    std::string classes("background,"
+       "aeroplane,bicycle,bird,boat,bottle,bus,car,cat,chair,"
+       "cow,diningtable,dog,horse,motorbike,person,pottedplant,"
+       "sheep,sofa,train,tvmonitor");
 
+    nh.param<bool>("publish_images", publish_images, false);
     nh.param<string>("data_dir", dir, "");
-    nh.param<string>("protonet_file", proto_net_file, "MobileNetSSD_deploy.prototxt.txt");
-    nh.param<string>("caffe_model_file", caffe_model_file, "MobileNetSSD_deploy.caffemodel");
+    nh.param<string>("protonet_file", proto_net_file,
+                     "MobileNetSSD_deploy.prototxt.txt");
+    nh.param<string>("caffe_model_file", caffe_model_file,
+                     "MobileNetSSD_deploy.caffemodel");
     nh.param<float>("min_confidence", min_confidence, 0.2);
+    nh.param<int>("im_size", im_size, 300);
+    nh.param<float>("scale_factor", scale_factor, 0.007843f);
+    nh.param<float>("mean_val", mean_val, 127.5f);
+    nh.param<std::string>("class_names", classes, classes);
+
+    boost::split(class_names, classes, boost::is_any_of(","));
+    ROS_INFO("Read %d class names", (int)class_names.size());
 
     try {
-        net = cv::dnn::readNetFromCaffe(dir + "/" + proto_net_file, dir + "/" + caffe_model_file);
+        net = cv::dnn::readNetFromCaffe(dir + "/" + proto_net_file,
+                                        dir + "/" + caffe_model_file);
     }
     catch(cv::Exception & e) {
         ROS_ERROR("cv exception: %s", e.what());
         exit(1);
-        
     }
 
-    nh.param<bool>("publish_images", publish_images, false);
     image_pub = it.advertise("/dnn_images", 1);
-    object_pub =  nh.advertise<dnn_detect::DetectedObject>("/dnn_objects", 20); 
+    object_pub =  nh.advertise<dnn_detect::DetectedObject>("/dnn_objects", 20);
     img_sub = it.subscribe("/camera", 1,
                            &DnnNode::imageCallback, this);
 
@@ -188,7 +205,6 @@ int main(int argc, char ** argv) {
     ros::NodeHandle nh("~");
 
     DnnNode node = DnnNode(nh);
-
     ros::spin();
 
     return 0;
