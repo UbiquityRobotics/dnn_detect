@@ -50,6 +50,11 @@
 using namespace std;
 using namespace cv;
 
+enum model_t {
+  MODEL_CAFFE,
+  MODEL_YOLO
+};
+
 class DnnNode {
   private:
     ros::Publisher object_pub;
@@ -59,6 +64,8 @@ class DnnNode {
 
     // if set, we publish the images that contain objects
     bool publish_images;
+    model_t model;
+    bool swap_rb;
 
     int frame_num;
     float min_confidence;
@@ -79,7 +86,8 @@ class DnnNode {
 };
 
 
-void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
+void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg)
+{
     ROS_INFO("Got image %d", msg->header.seq);
     frame_num++;
 
@@ -93,60 +101,100 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
 
         cv::resize(cv_ptr->image, resized_image, cvSize(im_size, im_size));
         cv::Mat blob = cv::dnn::blobFromImage(resized_image, scale_factor,
-          cvSize(im_size, im_size), mean_val, false);
+          cvSize(im_size, im_size), mean_val, swap_rb, false);
 
         net.setInput(blob, "data");
-        cv::Mat objs = net.forward("detection_out");
 
-        cv::Mat detectionMat(objs.size[2], objs.size[3], CV_32F,
-                             objs.ptr<float>());
+        cv::Mat detectionMat;
+        if (model == MODEL_CAFFE) {
+            cv::Mat objs = net.forward("detection_out");
+
+            detectionMat = cv::Mat(objs.size[2], objs.size[3], CV_32F,
+                                   objs.ptr<float>());
+        }
+        else if (model == MODEL_YOLO) {
+            detectionMat = net.forward("detection_out");
+        }
 
         for(int i = 0; i < detectionMat.rows; i++) {
+            float confidence = 0.0f;
+            int object_class = -1;
 
-            float confidence = detectionMat.at<float>(i, 2);
-            if (confidence > min_confidence) {
-                int object_class = (int)(detectionMat.at<float>(i, 1));
+            if (model == MODEL_CAFFE) {
+                confidence = detectionMat.at<float>(i, 2);
+                object_class = (int)(detectionMat.at<float>(i, 1));
+            }
+            else if (model == MODEL_YOLO) {
+ 	        const int probability_index = 5;
+                const int probability_size = detectionMat.cols - probability_index;
+                float *prob_array_ptr = &detectionMat.at<float>(i, probability_index);
 
-                int x_min = static_cast<int>(detectionMat.at<float>(i, 3) * w);
-                int y_min = static_cast<int>(detectionMat.at<float>(i, 4) * h);
-                int x_max = static_cast<int>(detectionMat.at<float>(i, 5) * w);
-                int y_max = static_cast<int>(detectionMat.at<float>(i, 6) * h);
+                object_class = max_element(prob_array_ptr, prob_array_ptr + probability_size) - prob_array_ptr;
+                confidence = detectionMat.at<float>(i, (int)object_class + probability_index);
+            }
 
-                std::string class_name;
-                if (object_class >= class_names.size()) {
-                     class_name = "unknown";
-                     ROS_ERROR("Object class %d out of range of class names",
-                               object_class);
+            if (confidence >= min_confidence) {
+                int x_min = 0;
+                int x_max = 0;
+                int y_min = 0;
+                int y_max = 0;
+
+                if (model == MODEL_CAFFE) {
+                    x_min = static_cast<int>(detectionMat.at<float>(i, 3) * w);
+                    y_min = static_cast<int>(detectionMat.at<float>(i, 4) * h);
+                    x_max = static_cast<int>(detectionMat.at<float>(i, 5) * w);
+                    y_max = static_cast<int>(detectionMat.at<float>(i, 6) * h);
                 }
-                else {
-                     class_name = class_names[object_class];
+                else if (model == MODEL_YOLO) {
+                    float x = detectionMat.at<float>(i, 0);
+                    float y = detectionMat.at<float>(i, 1);
+                    float width = detectionMat.at<float>(i, 2);
+                    float height = detectionMat.at<float>(i, 3);
+                    x_min = static_cast<int>((x - width / 2) * w);
+                    y_min = static_cast<int>((y - height / 2) * h);
+                    x_max = static_cast<int>((x + width / 2) * w);
+                    y_max = static_cast<int>((y + height / 2) * h);
                 }
-                std::string label = str(boost::format{"%1% %2%"} %
-                                        class_name % confidence);
 
-                ROS_INFO("%s", label.c_str());
-                dnn_detect::DetectedObject obj;
-                obj.header.frame_id = msg->header.frame_id;
-                obj.class_name = class_name;
-                obj.confidence = confidence;
-                obj.x_min = x_min;
-                obj.x_max = x_max;
-                obj.y_min = y_min;
-                obj.y_max = y_max;
-                object_pub.publish(obj);
-
-                Rect object(x_min, y_min, x_max-x_min, y_max-y_min);
+                Rect object(x_min, y_min, y_max - x_min, y_max - y_min);
 
                 rectangle(cv_ptr->image, object, Scalar(0, 255, 0));
-                int baseline=0;
-                cv::Size text_size = cv::getTextSize(label,
-                                     FONT_HERSHEY_SIMPLEX, 0.75, 2, &baseline);
-                putText(cv_ptr->image, label, Point(x_min, y_min-text_size.height),
-                        FONT_HERSHEY_SIMPLEX, 0.75, Scalar(0, 255, 0));
+
+                std::string class_name("unknown");
+                if (object_class < class_names.size()) {
+                    class_name = class_names[object_class];
+                    std::string label = str(boost::format{"%1% %2%"} %
+                                            class_name % confidence);
+
+                    ROS_INFO("%s %f", label.c_str(), confidence);
+                    int baseLine = 0;
+                    Size labelSize = getTextSize(label, FONT_HERSHEY_SIMPLEX,
+                                                 0.5, 1, &baseLine);
+                    rectangle(cv_ptr->image,
+                              Rect(Point(x_min, y_min ),
+                                   Size(labelSize.width, labelSize.height + baseLine)),
+                              Scalar(255, 255, 255), CV_FILLED);
+                    putText(cv_ptr->image, label,
+                            Point(x_min, y_min+labelSize.height),
+                            FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0,0,0));
+
+                    dnn_detect::DetectedObject obj;
+                    obj.header.frame_id = msg->header.frame_id;
+                    obj.class_name = class_name;
+                    obj.confidence = confidence;
+                    obj.x_min = x_min;
+                    obj.x_max = x_max;
+                    obj.y_min = y_min;
+                    obj.y_max = y_max;
+                    object_pub.publish(obj);
+                }
+                else {
+                    ROS_INFO("Unknown class %d conf %f", object_class, confidence);
+                }
             }
         }
 
-	image_pub.publish(cv_ptr->toImageMsg());
+        image_pub.publish(cv_ptr->toImageMsg());
     }
     catch(cv_bridge::Exception & e) {
         ROS_ERROR("cv_bridge exception: %s", e.what());
@@ -163,18 +211,39 @@ DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
     std::string dir;
     std::string proto_net_file;
     std::string caffe_model_file;
+    std::string yolo_weights_file;
+    std::string yolo_cfg_file;
+
     std::string classes("background,"
        "aeroplane,bicycle,bird,boat,bottle,bus,car,cat,chair,"
        "cow,diningtable,dog,horse,motorbike,person,pottedplant,"
        "sheep,sofa,train,tvmonitor");
 
     nh.param<bool>("publish_images", publish_images, false);
+    nh.param<bool>("swap_rb", swap_rb, false);
     nh.param<string>("data_dir", dir, "");
-    nh.param<string>("protonet_file", proto_net_file,
-                     "MobileNetSSD_deploy.prototxt.txt");
-    nh.param<string>("caffe_model_file", caffe_model_file,
-                     "MobileNetSSD_deploy.caffemodel");
-    nh.param<float>("min_confidence", min_confidence, 0.2);
+
+    std::string model_string;
+    nh.param<string>("model", model_string, "caffe");
+    if (model_string == "caffe") {
+        model = MODEL_CAFFE;
+        nh.param<string>("protonet_file", proto_net_file,
+                         "MobileNetSSD_deploy.prototxt.txt");
+        nh.param<string>("caffe_model_file", caffe_model_file,
+                         "MobileNetSSD_deploy.caffemodel");
+    }
+    else if (model_string == "yolo") {
+        model = MODEL_YOLO;
+        nh.param<string>("yolo_cfg_file", yolo_cfg_file,
+                         "tiny-yolo.cfg");
+        nh.param<string>("yolo_weights_file", yolo_weights_file,
+                         "tiny-yolo.weights");
+    }
+    else {
+        ROS_ERROR("Unknown model type %s", model_string.c_str());
+        exit(1);
+    }
+    nh.param<float>("min_confidence", min_confidence, 0.12);
     nh.param<int>("im_size", im_size, 300);
     nh.param<float>("scale_factor", scale_factor, 0.007843f);
     nh.param<float>("mean_val", mean_val, 127.5f);
@@ -184,8 +253,14 @@ DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
     ROS_INFO("Read %d class names", (int)class_names.size());
 
     try {
-        net = cv::dnn::readNetFromCaffe(dir + "/" + proto_net_file,
-                                        dir + "/" + caffe_model_file);
+        if (model == MODEL_CAFFE) {
+            net = cv::dnn::readNetFromCaffe(dir + "/" + proto_net_file,
+                                            dir + "/" + caffe_model_file);
+        }
+        else if (model == MODEL_YOLO) {
+            net = cv::dnn::readNetFromDarknet(dir + "/tiny-yolo.cfg",
+                                              dir + "/tiny-yolo.weights");
+        }
     }
     catch(cv::Exception & e) {
         ROS_ERROR("cv exception: %s", e.what());
