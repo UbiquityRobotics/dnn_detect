@@ -1,4 +1,3 @@
-Header header
 string class_name
 float32 confidence
 float32 x_min

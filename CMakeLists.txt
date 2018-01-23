@@ -19,13 +19,19 @@ find_package(OpenCV REQUIRED)
 add_message_files(
    FILES
    DetectedObject.msg
+   DetectedObjectArray.msg
+)
+
+
+add_service_files(
+  FILES
+  Detect.srv
 )
 
 generate_messages(
   DEPENDENCIES
   std_msgs
 )
-
 catkin_package(INCLUDE_DIRS DEPENDS OpenCV)
 
 ###########

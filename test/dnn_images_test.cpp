@@ -6,6 +6,7 @@
 #include <cv_bridge/cv_bridge.h>
 
 #include "dnn_detect/DetectedObject.h"
+#include "dnn_detect/DetectedObjectArray.h"
 
 class DnnImagesTest : public ::testing::Test {
 protected:
@@ -17,6 +18,7 @@ protected:
     nh_priv.getParam("image_directory", image_directory);
     object_sub = nh.subscribe("/dnn_objects", 1, &DnnImagesTest::object_callback, this);
     got_object = false;
+    got_cat = false;
   }
 
   virtual void TearDown() { delete it;}
@@ -35,25 +37,32 @@ protected:
   image_transport::Publisher image_pub;
 
   bool got_object;
+  bool got_cat;
   ros::Subscriber object_sub;
 
   std::string image_directory;
 
   // Set up subscribing
-  void object_callback(const dnn_detect::DetectedObject& f) {
+  void object_callback(const dnn_detect::DetectedObjectArray& results) {
     got_object = true;
+    for (const auto& obj : results.objects) {
+      if (obj.class_name == "cat") {
+        got_cat = true;
+      }
+    } 
   }
 };
 
 
 TEST_F(DnnImagesTest, cat) {
   ros::Rate loop_rate(5);
-  while (nh.ok() && !got_object) {
+  while (nh.ok() && !got_object && !got_cat) {
     publish_image("cat.jpg");
     ros::spinOnce();
     loop_rate.sleep();
   }
 
+  ASSERT_TRUE(got_cat);
 }
 
 int main(int argc, char** argv)

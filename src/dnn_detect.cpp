@@ -35,9 +35,13 @@
 
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
+#include <image_transport/subscriber_filter.h>
 #include <cv_bridge/cv_bridge.h>
+#include <message_filters/subscriber.h>
 
 #include "dnn_detect/DetectedObject.h"
+#include "dnn_detect/DetectedObjectArray.h"
+#include "dnn_detect/Detect.h"
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/dnn.hpp>
@@ -47,12 +51,20 @@
 #include <string>
 #include <boost/algorithm/string.hpp>
 
+#include <thread>
+#include <functional>
+#include <mutex>
+#include <condition_variable>
+
 using namespace std;
 using namespace cv;
 
+std::condition_variable cond;
+std::mutex mutx;
+
 class DnnNode {
   private:
-    ros::Publisher object_pub;
+    ros::Publisher results_pub;
 
     image_transport::ImageTransport it;
     image_transport::Subscriber img_sub;
@@ -72,14 +84,46 @@ class DnnNode {
     cv::dnn::Net net;
     cv::Mat resized_image;
 
+    volatile bool triggered;
+    volatile bool processed;
+
+    dnn_detect::DetectedObjectArray results;
+
+    ros::ServiceServer detect_srv;
+
+    bool detectCallback(dnn_detect::Detect::Request &req,
+                        dnn_detect::Detect::Response &res);
+
     void imageCallback(const sensor_msgs::ImageConstPtr &msg);
 
   public:
     DnnNode(ros::NodeHandle &nh);
 };
 
+bool DnnNode::detectCallback(dnn_detect::Detect::Request &req,
+                             dnn_detect::Detect::Response &res)
+{
+    ROS_INFO("Got service request");
+    triggered = true;
 
-void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
+    std::unique_lock<std::mutex> lock(mutx);
+
+    while (!processed) {
+      ros::spinOnce();
+      cond.wait(lock);
+    }
+    res.result = results;
+    return true;
+}
+
+
+void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg)
+{
+    if (!triggered) {
+        return;
+    }
+    triggered = false;
+
     ROS_INFO("Got image %d", msg->header.seq);
     frame_num++;
 
@@ -100,6 +144,9 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
 
         cv::Mat detectionMat(objs.size[2], objs.size[3], CV_32F,
                              objs.ptr<float>());
+
+        std::unique_lock<std::mutex> lock(mutx);
+        results.header.frame_id = msg->header.frame_id;
 
         for(int i = 0; i < detectionMat.rows; i++) {
 
@@ -126,14 +173,13 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
 
                 ROS_INFO("%s", label.c_str());
                 dnn_detect::DetectedObject obj;
-                obj.header.frame_id = msg->header.frame_id;
                 obj.class_name = class_name;
                 obj.confidence = confidence;
                 obj.x_min = x_min;
                 obj.x_max = x_max;
                 obj.y_min = y_min;
                 obj.y_max = y_max;
-                object_pub.publish(obj);
+                results.objects.push_back(obj);
 
                 Rect object(x_min, y_min, x_max-x_min, y_max-y_min);
 
@@ -146,7 +192,13 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
             }
         }
 
+        results_pub.publish(results);
+
 	image_pub.publish(cv_ptr->toImageMsg());
+
+        ROS_INFO("Notifying condition variable");
+        processed = true;
+        cond.notify_all();
     }
     catch(cv_bridge::Exception & e) {
         ROS_ERROR("cv_bridge exception: %s", e.what());
@@ -192,8 +244,15 @@ DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
         exit(1);
     }
 
+    triggered = false;
+
+    detect_srv = nh.advertiseService("detect", &DnnNode::detectCallback, this);
+
+    results_pub =
+        nh.advertise<dnn_detect::DetectedObjectArray>("/dnn_objects", 20);
+
     image_pub = it.advertise("/dnn_images", 1);
-    object_pub =  nh.advertise<dnn_detect::DetectedObject>("/dnn_objects", 20);
+
     img_sub = it.subscribe("/camera", 1,
                            &DnnNode::imageCallback, this);
 
@@ -205,7 +264,8 @@ int main(int argc, char ** argv) {
     ros::NodeHandle nh("~");
 
     DnnNode node = DnnNode(nh);
-    ros::spin();
+    ros::MultiThreadedSpinner spinner(2);
+    spinner.spin();
 
     return 0;
 }
