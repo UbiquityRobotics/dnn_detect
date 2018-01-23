@@ -35,9 +35,7 @@
 
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
-#include <image_transport/subscriber_filter.h>
 #include <cv_bridge/cv_bridge.h>
-#include <message_filters/subscriber.h>
 
 #include "dnn_detect/DetectedObject.h"
 #include "dnn_detect/DetectedObjectArray.h"
@@ -52,7 +50,6 @@
 #include <boost/algorithm/string.hpp>
 
 #include <thread>
-#include <functional>
 #include <mutex>
 #include <condition_variable>
 
@@ -109,7 +106,6 @@ bool DnnNode::detectCallback(dnn_detect::Detect::Request &req,
     std::unique_lock<std::mutex> lock(mutx);
 
     while (!processed) {
-      ros::spinOnce();
       cond.wait(lock);
     }
     res.result = results;
