@@ -7,6 +7,7 @@
 
 #include "dnn_detect/DetectedObject.h"
 #include "dnn_detect/DetectedObjectArray.h"
+#include "dnn_detect/Detect.h"
 
 class DnnImagesTest : public ::testing::Test {
 protected:
@@ -25,8 +26,8 @@ protected:
 
   void publish_image(std::string file) {
     cv::Mat image = cv::imread(image_directory+file, CV_LOAD_IMAGE_COLOR);
-    cv::waitKey(30);
-    sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", image).toImageMsg();
+    sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8",
+        image).toImageMsg();
     image_pub.publish(msg);
   }
 
@@ -56,6 +57,7 @@ protected:
 
 TEST_F(DnnImagesTest, cat) {
   ros::Rate loop_rate(5);
+  system("rosservice call /dnn_detect/detect&");
   while (nh.ok() && !got_object && !got_cat) {
     publish_image("cat.jpg");
     ros::spinOnce();
