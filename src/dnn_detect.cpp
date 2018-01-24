@@ -88,17 +88,17 @@ class DnnNode {
 
     ros::ServiceServer detect_srv;
 
-    bool detectCallback(dnn_detect::Detect::Request &req,
-                        dnn_detect::Detect::Response &res);
+    bool trigger_callback(dnn_detect::Detect::Request &req,
+                          dnn_detect::Detect::Response &res);
 
-    void imageCallback(const sensor_msgs::ImageConstPtr &msg);
+    void image_callback(const sensor_msgs::ImageConstPtr &msg);
 
   public:
     DnnNode(ros::NodeHandle &nh);
 };
 
-bool DnnNode::detectCallback(dnn_detect::Detect::Request &req,
-                             dnn_detect::Detect::Response &res)
+bool DnnNode::  trigger_callback(dnn_detect::Detect::Request &req,
+                                 dnn_detect::Detect::Response &res)
 {
     ROS_INFO("Got service request");
     triggered = true;
@@ -113,7 +113,7 @@ bool DnnNode::detectCallback(dnn_detect::Detect::Request &req,
 }
 
 
-void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg)
+void DnnNode::image_callback(const sensor_msgs::ImageConstPtr & msg)
 {
     if (!triggered) {
         return;
@@ -143,6 +143,7 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg)
 
         std::unique_lock<std::mutex> lock(mutx);
         results.header.frame_id = msg->header.frame_id;
+        results.objects.clear();
 
         for(int i = 0; i < detectionMat.rows; i++) {
 
@@ -192,9 +193,6 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg)
 
 	image_pub.publish(cv_ptr->toImageMsg());
 
-        ROS_INFO("Notifying condition variable");
-        processed = true;
-        cond.notify_all();
     }
     catch(cv_bridge::Exception & e) {
         ROS_ERROR("cv_bridge exception: %s", e.what());
@@ -202,6 +200,9 @@ void DnnNode::imageCallback(const sensor_msgs::ImageConstPtr & msg)
     catch(cv::Exception & e) {
         ROS_ERROR("cv exception: %s", e.what());
     }
+    ROS_INFO("Notifying condition variable");
+    processed = true;
+    cond.notify_all();
 }
 
 DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
@@ -242,7 +243,7 @@ DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
 
     triggered = false;
 
-    detect_srv = nh.advertiseService("detect", &DnnNode::detectCallback, this);
+    detect_srv = nh.advertiseService("detect", &DnnNode::trigger_callback, this);
 
     results_pub =
         nh.advertise<dnn_detect::DetectedObjectArray>("/dnn_objects", 20);
@@ -250,7 +251,7 @@ DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
     image_pub = it.advertise("/dnn_images", 1);
 
     img_sub = it.subscribe("/camera", 1,
-                           &DnnNode::imageCallback, this);
+                           &DnnNode::image_callback, this);
 
     ROS_INFO("DNN detection ready");
 }
