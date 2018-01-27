@@ -9,9 +9,12 @@
 #include "dnn_detect/DetectedObjectArray.h"
 #include "dnn_detect/Detect.h"
 
+#include <boost/thread/thread.hpp>
+
+
 class DnnImagesTest : public ::testing::Test {
 protected:
-  virtual void SetUp() { 
+  virtual void SetUp() {
     it = new image_transport::ImageTransport(nh);
     image_pub = it->advertise("camera/image", 1);
 
@@ -20,11 +23,24 @@ protected:
     object_sub = nh.subscribe("/dnn_objects", 1, &DnnImagesTest::object_callback, this);
     got_object = false;
     got_cat = false;
+
+  }
+
+  // Make a service request to trigger detection
+  void trigger() {
+    ros::NodeHandlePtr node = boost::make_shared<ros::NodeHandle>();
+    ros::ServiceClient client =
+       node->serviceClient<dnn_detect::Detect>("/dnn_detect/detect");
+    dnn_detect::Detect d;
+    client.call(d);
   }
 
   virtual void TearDown() { delete it;}
 
   void publish_image(std::string file) {
+    boost::thread trig(&DnnImagesTest::trigger, this);
+
+    sleep(1);
     cv::Mat image = cv::imread(image_directory+file, CV_LOAD_IMAGE_COLOR);
     sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8",
         image).toImageMsg();
@@ -50,14 +66,13 @@ protected:
       if (obj.class_name == "cat") {
         got_cat = true;
       }
-    } 
+    }
   }
 };
 
 
 TEST_F(DnnImagesTest, cat) {
   ros::Rate loop_rate(5);
-  system("rosservice call /dnn_detect/detect&");
   while (nh.ok() && !got_object && !got_cat) {
     publish_image("cat.jpg");
     ros::spinOnce();
