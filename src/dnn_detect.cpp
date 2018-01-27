@@ -81,6 +81,7 @@ class DnnNode {
     cv::dnn::Net net;
     cv::Mat resized_image;
 
+    bool single_shot;
     volatile bool triggered;
     volatile bool processed;
 
@@ -115,7 +116,7 @@ bool DnnNode::  trigger_callback(dnn_detect::Detect::Request &req,
 
 void DnnNode::image_callback(const sensor_msgs::ImageConstPtr & msg)
 {
-    if (!triggered) {
+    if (single_shot && !triggered) {
         return;
     }
     triggered = false;
@@ -216,6 +217,8 @@ DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
        "aeroplane,bicycle,bird,boat,bottle,bus,car,cat,chair,"
        "cow,diningtable,dog,horse,motorbike,person,pottedplant,"
        "sheep,sofa,train,tvmonitor");
+
+    nh.param<bool>("single_shot", single_shot, false);
 
     nh.param<bool>("publish_images", publish_images, false);
     nh.param<string>("data_dir", dir, "");
