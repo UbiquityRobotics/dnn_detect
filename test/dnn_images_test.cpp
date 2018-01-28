@@ -28,9 +28,9 @@ protected:
 
   // Make a service request to trigger detection
   void trigger() {
-    ros::NodeHandlePtr node = boost::make_shared<ros::NodeHandle>();
+    ros::NodeHandle node;
     ros::ServiceClient client =
-       node->serviceClient<dnn_detect::Detect>("/dnn_detect/detect");
+       node.serviceClient<dnn_detect::Detect>("/dnn_detect/detect");
     dnn_detect::Detect d;
     client.call(d);
   }
