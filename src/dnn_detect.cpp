@@ -201,7 +201,7 @@ void DnnNode::image_callback(const sensor_msgs::ImageConstPtr & msg)
     catch(cv::Exception & e) {
         ROS_ERROR("cv exception: %s", e.what());
     }
-    ROS_INFO("Notifying condition variable");
+    ROS_DEBUG("Notifying condition variable");
     processed = true;
     cond.notify_all();
 }
