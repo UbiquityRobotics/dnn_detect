@@ -72,6 +72,7 @@ class DnnNode {
     int frame_num;
     float min_confidence;
     int im_size;
+    int rotate_flag;
     float scale_factor;
     float mean_val;
     std::vector<std::string> class_names;
@@ -80,6 +81,7 @@ class DnnNode {
 
     cv::dnn::Net net;
     cv::Mat resized_image;
+    cv::Mat rotated_image;
 
     bool single_shot;
     volatile bool triggered;
@@ -132,6 +134,11 @@ void DnnNode::image_callback(const sensor_msgs::ImageConstPtr & msg)
 
         int w = cv_ptr->image.cols;
         int h = cv_ptr->image.rows;
+
+        if (rotate_flag >= 0) {
+          cv::rotate(cv_ptr->image, rotated_image, rotate_flag);
+          rotated_image.copyTo(cv_ptr->image);
+        }
 
         cv::resize(cv_ptr->image, resized_image, cvSize(im_size, im_size));
         cv::Mat blob = cv::dnn::blobFromImage(resized_image, scale_factor,
@@ -229,6 +236,7 @@ DnnNode::DnnNode(ros::NodeHandle & nh) : it(nh)
                      "MobileNetSSD_deploy.caffemodel");
     nh.param<float>("min_confidence", min_confidence, 0.2);
     nh.param<int>("im_size", im_size, 300);
+    nh.param<int>("rotate_flag", rotate_flag, -1);
     nh.param<float>("scale_factor", scale_factor, 0.007843f);
     nh.param<float>("mean_val", mean_val, 127.5f);
     nh.param<std::string>("class_names", classes, classes);
