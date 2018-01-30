@@ -110,6 +110,7 @@ bool DnnNode::  trigger_callback(dnn_detect::Detect::Request &req,
       cond.wait(lock);
     }
     res.result = results;
+    processed = false;
     return true;
 }
 
