@@ -48,6 +48,7 @@
 #include <list>
 #include <string>
 #include <boost/algorithm/string.hpp>
+#include <boost/format.hpp>
 
 #include <thread>
 #include <mutex>
