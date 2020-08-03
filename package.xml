@@ -22,7 +22,6 @@
   <depend>image_transport_plugins</depend>
   <depend>sensor_msgs</depend>
   <depend>cv_bridge</depend>
-  <depend>opencv3</depend>
   <depend>dynamic_reconfigure</depend>
 
 </package>
