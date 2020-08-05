@@ -11,6 +11,11 @@
 
 #include <boost/thread/thread.hpp>
 
+#if CV_MAJOR_VERSION < 4
+    #define IMREAD_COLOR_MODE CV_LOAD_IMAGE_COLOR
+#else
+    #define IMREAD_COLOR_MODE cv::IMREAD_COLOR
+#endif
 
 class DnnImagesTest : public ::testing::Test {
 protected:
@@ -41,7 +46,7 @@ protected:
     boost::thread trig(&DnnImagesTest::trigger, this);
 
     sleep(1);
-    cv::Mat image = cv::imread(image_directory+file, CV_LOAD_IMAGE_COLOR);
+    cv::Mat image = cv::imread(image_directory+file, IMREAD_COLOR_MODE);
     sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8",
         image).toImageMsg();
     image_pub.publish(msg);
