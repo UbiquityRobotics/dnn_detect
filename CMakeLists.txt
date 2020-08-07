@@ -83,5 +83,6 @@ if(CATKIN_ENABLE_TESTING)
         add_rostest_gtest(dnn_images_test 
           test/dnn_images.test 
           test/dnn_images_test.cpp)
+        add_dependencies(dnn_images_test ${PROJECT_NAME}_generate_messages)
         target_link_libraries(dnn_images_test ${catkin_LIBRARIES} ${OpenCV_LIBS})
 endif()
