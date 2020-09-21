@@ -2,8 +2,8 @@
 Changelog for package dnn_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.0 (2020-09-21)
+------------------
 * dnn_images_test.cpp - support opencv version 4
 * Noetic support
 * Contributors: Jim Vaughan, Rohan Agrawal, Tim
