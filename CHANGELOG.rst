@@ -2,6 +2,12 @@
 Changelog for package dnn_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* dnn_images_test.cpp - support opencv version 4
+* Noetic support
+* Contributors: Jim Vaughan, Rohan Agrawal, Tim
+
 0.0.3 (2018-02-16)
 ------------------
 * Add optional rotation of image
